@@ -1,0 +1,8 @@
+app.js
+index.html
+.git
+/etc/passwd
+package.json
+.htaccess
+.env
+index.php
