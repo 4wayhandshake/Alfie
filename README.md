@@ -1,5 +1,4 @@
 ```
-'''
            ,ggg,
           dP""8I   ,dPYb, ,dPYb,                   ,,,,,,,,,,,
          dP   88   IP'`Yb IP'`Yb                  : AUTOMATIC :
@@ -16,7 +15,6 @@ Yb,_,dP       `8b,,d8b,_ ,d8b,_  _,88,_ `YbadP'    by
                           I8   8I
                           I8, ,8'
                            "Y8P'
-'''
 ```
 
 Scan websites for LFI vulnerabilities and path traversals. Multi-threaded for max speed; tasteful filters for max precision.
