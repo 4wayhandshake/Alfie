@@ -81,10 +81,10 @@ Next, **apply the filter and do a non-verbose run**. In this example, the LFI st
 
 ## To Do
 
-[ ] Add a `-o` switch to output results to a file.
-[ ] Include a banner
-[ ] Include a progress meter, with guesses per second and an estimated runtime.
-[ ] Improve parsing of arguments `--cookie` and `--data` so that it isn't so strict about formatting.
+- [ ] Add a `-o` switch to output results to a file.
+- [ ] Include a banner
+- [ ] Include a progress meter, with guesses per second and an estimated runtime.
+- [ ] Improve parsing of arguments `--cookie` and `--data` so that it isn't so strict about formatting.
 
 
 
