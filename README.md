@@ -1,5 +1,23 @@
-# Alfie
-**A**utomatic **L**ocal **F**ile **I**nclusion **E**numerator
+```
+'''
+           ,ggg,
+          dP""8I   ,dPYb, ,dPYb,                   ,,,,,,,,,,,
+         dP   88   IP'`Yb IP'`Yb                  : AUTOMATIC :
+        dP    88   I8  8I I8  8I   gg             : LOCAL     :
+       ,8'    88   I8  8' I8  8'   ""             : FILE      :
+       d88888888   I8 dP  I8 dP    gg    ,ggg,    : INCLUSION :
+ __   ,8"     88   I8dP   I8dP     88   i8" "8i   : ENUMERATOR:
+dP"  ,8P      Y8   I8P    I8P      88   I8, ,8I    ````````````
+Yb,_,dP       `8b,,d8b,_ ,d8b,_  _,88,_ `YbadP'    by
+ "Y8P"         `Y88P'"Y88PI8"88888P""Y8888P"Y888   4wayhandshake
+                          I8 `8,                        🤝🤝🤝🤝
+//#//#//#//#//#//#//#//#/ I8  `8, //#//#//#//#//
+                          I8   8I
+                          I8   8I
+                          I8, ,8'
+                           "Y8P'
+'''
+```
 
 Scan websites for LFI vulnerabilities and path traversals. Multi-threaded for max speed; tasteful filters for max precision.
 
@@ -81,8 +99,8 @@ Next, **apply the filter and do a non-verbose run**. In this example, the LFI st
 
 ## To Do
 
-- [ ] Add a `-o` switch to output results to a file.
-- [ ] Include a banner
+- [x] Add a `-o` switch to output results to a file.
+- [x] Include a banner with all non-default options shown
 - [ ] Include a progress meter, with guesses per second and an estimated runtime.
 - [ ] Improve parsing of arguments `--cookie` and `--data` so that it isn't so strict about formatting.
 

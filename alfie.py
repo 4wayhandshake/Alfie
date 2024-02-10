@@ -35,8 +35,33 @@ parser.add_argument('-X', '--request-type', dest='request_type', help='Type of H
 parser.add_argument('-fs', '--filter-sizes', dest='filter_sizes', help='Comma-separated list of sizes (in bytes) to filter from the results.', type=str)
 parser.add_argument('-fw', '--filter-words', dest='filter_words', help='Comma-separated list of word counts to filter from the results.', type=str)
 parser.add_argument('-fc', '--filter-codes', dest='filter_codes', help='Comma-separated list of HTTP status codes to filter from the results.', type=str, default='400,401,402,403,404,405')
+parser.add_argument('-o', '--output', dest='output', help='File to log positive results.', type=str)
+parser.add_argument('--quiet', dest='quiet', action='store_true', help='Don\'t print the banner or options.')
 
 args = parser.parse_args()
+
+banner = '''
+           ,ggg,
+          dP""8I   ,dPYb, ,dPYb,                   ,,,,,,,,,,,
+         dP   88   IP'`Yb IP'`Yb                  : AUTOMATIC :
+        dP    88   I8  8I I8  8I   gg             : LOCAL     :
+       ,8'    88   I8  8' I8  8'   ""             : FILE      :
+       d88888888   I8 dP  I8 dP    gg    ,ggg,    : INCLUSION :
+ __   ,8"     88   I8dP   I8dP     88   i8" "8i   : ENUMERATOR:
+dP"  ,8P      Y8   I8P    I8P      88   I8, ,8I    ````````````
+Yb,_,dP       `8b,,d8b,_ ,d8b,_  _,88,_ `YbadP'    by
+ "Y8P"         `Y88P'"Y88PI8"88888P""Y8888P"Y888   4wayhandshake
+                          I8 `8,                        🤝🤝🤝🤝
+//#//#//#//#//#//#//#//#/ I8  `8, //#//#//#//#//
+                          I8   8I
+                          I8   8I
+                          I8, ,8'
+                           "Y8P'
+'''
+# See https://manytools.org/hacker-tools/ascii-banner/ for banner creation
+# Font (nscript) by Normand Veilleux <nveilleu@emr.ca> Oct 7, 1994
+# figletized by Peter Samuelson <psamuels@hmc.edu> Nov 29, 1994
+
 s = requests.session()
 exit_flag = False # Global flag to signal threads to exit
 successes = []
@@ -137,6 +162,7 @@ def makeRequest(url):
         else:
             response = requests.get(url, cookies=c, timeout=args.timeout)
         if matches(response, url):
+            global successes
             successes.append(url)
     except requests.RequestException as e:
         print(f"An error occurred: {e}")
@@ -160,7 +186,63 @@ def signalHandler(signum, frame):
     exit_flag = True
     print("\nCancelling enumeration...\n")
 
+def writeLogfile(filename, successful_urls):
+    if (filename[0] in '/\\'):
+        filepath = filename # absolute path was provided
+    else:
+        # relative path was provided
+        filepath = os.path.join(os.path.dirname(__file__), filename)
+    try:
+        with open(filepath, 'w') as f:
+            for url in successful_urls:
+                f.write(url+'\n')
+    except FileNotFoundError:
+        print(f"Error: The file '{file_path}' could not be found.")
+    except PermissionError:
+        print(f"Error: Permission denied. Unable to write to the file '{file_path}'.")
+    except Exception as e:
+        print(f"While writing the output file, an unexpected error occurred: {e}")
+
+def printOptions():
+    print('='*64)
+    print(f'URL: {args.url:>59}')
+    if args.verbose:
+        print('Verbose mode')
+    if args.lfi_wordlist != parser.get_default('lfi_wordlist'):
+        print(f'LFI wordlist: {args.lfi_wordlist:>50}')
+    if args.fuzz_wordlist != parser.get_default('fuzz_wordlist'):
+        print(f'Fuzz wordlist: {args.fuzz_wordlist:>49}')
+    if args.threads != parser.get_default('threads'):
+        print(f'Threads: {args.threads:>55}')
+    if args.filter_codes != parser.get_default('filter_codes'):
+        print(f'HTTP code filter: {args.filter_codes.upper():>46}')
+    if args.filter_sizes != parser.get_default('filter_sizes'):
+        print(f'Size filter (bytes): {args.filter_sizes:>43}')
+    if args.filter_words != parser.get_default('filter_words'):
+        print(f'Word count filter (# words): {args.filter_words:>35}')
+    if args.min != parser.get_default('min'):
+        print(f'Minimum traversal steps: {args.min:>39}')
+    if args.max != parser.get_default('max'):
+        print(f'Maximum traversal steps: {args.max:>39}')
+    if args.timeout != parser.get_default('timeout'):
+        print(f'Timeout: {args.timeout:>54}s')
+    if args.request_type != parser.get_default('request_type'):
+        print(f'Request type: {args.request_type.upper():>50}')
+    if args.cookies:
+        print(f'Cookies: {args.cookies:>55}')
+    if args.data:
+        print(f'Data: {args.data:>58}')
+    if args.ending != parser.get_default('ending'):
+        s = f'"{args.ending}"'
+        print(f'Ending string: {s:>49}')
+    if args.output:
+        print(f'Output file: {args.output:>51}')
+    print('='*64+'\n')
+
 def main():
+    if not args.quiet:
+        print(banner)
+        printOptions()
     # Register the signal handler for SIGINT
     signal.signal(signal.SIGINT, signalHandler)
     # Validate the args provided
@@ -195,9 +277,11 @@ def main():
             url_queue.put(None)
         # Wait for all worker threads to finish
         concurrent.futures.wait(workers)
+    if args.output:
+        writeLogfile(args.output, successes)
 
 if __name__ == "__main__":
     start_time = time.time()
     main()
     end_time = time.time()
-    print(f"Time taken: {end_time - start_time} seconds")
+    print(f"\nElapsed: {end_time - start_time:.1f}s")
