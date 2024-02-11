@@ -1,6 +1,6 @@
 ![banner](images/banner.png)
 
-Scan websites for LFI vulnerabilities and path traversals. 
+Scan websites for LFI vulnerabilities and path traversals.
 
 *Multi-threaded for max speed, tasteful filters for max precision.*
 
@@ -16,7 +16,7 @@ Good fuzzing requires separating false-positives from the actual results. **Star
 
 ![false-positive](images/false-positive.gif)
 
-> Any combination of HTTP **status codes**, **word counts**, and response **sizes** can be used as filters. 
+> Any combination of HTTP **status codes**, **word counts**, and response **sizes** can be used as filters.
 
 Next, **apply some filters and do a non-verbose run**. In this example, the path traversal stands out right away, leading to the hidden files `package.json` and `app.js`:
 
@@ -56,7 +56,7 @@ You can suppress this behavior and hide the banner with the `-q` or `--quiet` fl
 	Base URI of the target. Ex. "http://mywebsite.htb/index.php?page="
 
   -f FUZZ_WORDLIST, --fuzz-wordlist FUZZ_WORDLIST
-	Wordlist of "interesting" files to check for. 
+	Wordlist of "interesting" files to check for.
 	This wordlist should have one filename per line, with file extensions if applicable.
 
   -w LFI_WORDLIST, --wordlist LFI_WORDLIST
@@ -74,9 +74,6 @@ You can suppress this behavior and hide the banner with the `-q` or `--quiet` fl
 
   --timeout TIMEOUT     
 	Timeout for each request (in seconds). Default 5s.
-
-  --ending ENDING       
-	A character to append to the end of each test url. Ex. "%00".
 
   -b COOKIES, --cookies COOKIES
 	Cookies to include in each request. Ex. 'key1=value1; key2=value2'.
@@ -109,6 +106,9 @@ You can suppress this behavior and hide the banner with the `-q` or `--quiet` fl
   -nx, --no-extra-tests
 	Don't run the extra LFI tests (only useful for WAF evasion).
 
+  -ne, --no-ending-checks
+  	Don't check for null-byte termination (decreases runtime by at least 66%).
+
 ```
 
 
@@ -126,6 +126,9 @@ You can suppress this behavior and hide the banner with the `-q` or `--quiet` fl
   - [x] Added "extra checks" mechanism to automate tests for things like insecure PHP modules
   - [x] Started using semantic versioning
   - [x] Updated README and `--help` to include `--no-extra-checks` and `--version`
+- 1.3.1:
+  - [x] Added additional "extra checks" for other types of LFIs
+  - [x] Replaced `--ending` option with `--no-ending-checks`: it now checks for null-byte termination by default.
 
 
 
@@ -134,7 +137,7 @@ Please :star: this repo if you found it useful!
 
 ---
 
-Enjoy, 
+Enjoy,
 
 :handshake::handshake::handshake::handshake:
 @4wayhandshake

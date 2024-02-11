@@ -6,3 +6,5 @@ package.json
 .htaccess
 .env
 index.php
+/proc/self/environ
+/var/log/auth.log
