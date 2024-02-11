@@ -42,8 +42,11 @@ By default, **Alfie** will output any non-default options you provide as argumen
 You can suppress this behavior and hide the banner with the `-q` or `--quiet` flag (in case you want to pipe the output to another program).
 
 ```html
+  --version
+	Show the version number and exit
+
   -h, --help            
-	show this help message and exit
+	Show this help message and exit
 
   -v, --verbose         
 	Show each requested url, along with the status code, size, and words in the response.
@@ -103,15 +106,26 @@ You can suppress this behavior and hide the banner with the `-q` or `--quiet` fl
   -nc, --no-color
 	Don't ANSII colors in console output.
 
+  -nx, --no-extra-tests
+	Don't run the extra LFI tests (only useful for WAF evasion).
+
 ```
 
 
 
-## To Do
+## Change Log
 
-- [x] Add a `-o` switch to output results to a file.
-- [x] Include a banner with all non-default options shown
-- [x] Improve parsing of arguments `--cookie` and `--data` so that it uses browser-like formatting.
+- 1.0.0:
+  - [x] Runs successfully. Mimics behaviour of my [LFI-Enumerator bash script](https://github.com/4wayhandshake/LFI-Enumerator).
+- 1.1.0:
+  - [x] Add a `-o` switch to output results to a file.
+  - [x] Include a banner with all non-default options shown
+- 1.2.0:
+  - [x] Improve parsing of arguments `--cookie` and `--data` so that it uses browser-like formatting.
+- 1.3.0:
+  - [x] Added "extra checks" mechanism to automate tests for things like insecure PHP modules
+  - [x] Started using semantic versioning
+  - [x] Updated README and `--help` to include `--no-extra-checks` and `--version`
 
 
 
