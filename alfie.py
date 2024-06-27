@@ -9,6 +9,10 @@ import queue
 import signal
 import json
 
+#
+# NOTE TO SELF
+# CHECK OUT 0XDF'S WALKTHROUGH ON YOUTUBE FOR PIKATWOO FOR TURNING LFI INTO RCE ON NGINX TARGETS!!!
+#
 
 # This is necessary for disabling the 'verify=False' warning
 import urllib3
