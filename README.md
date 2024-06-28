@@ -131,6 +131,13 @@ You can suppress this behavior and hide the banner with the `-q` or `--quiet` fl
   - [x] Replaced `--ending` option with `--no-ending-checks`: it now checks for null-byte termination by default.
 
 
+## To-Do
+- [ ] Figure out why extra tests aren't working
+- [ ] Log errors to a log file instead of the screen
+- [ ] Separate out the PHP-only tests. 
+  - https://www.php.net/manual/en/wrappers.php.php
+  - https://www.php.net/manual/en/filters.php
+- [ ] Encoding mutations should apply to the whole payload, not just the traversal
 
 Please :star: this repo if you found it useful!
 
