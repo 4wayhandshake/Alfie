@@ -54,9 +54,15 @@ def load_json_file(file_path):
 # This is just to make the Help text more informative:
 all_files_dict = load_json_file('file-list.json')
 all_keywords = {'any'}
+filename_length_bounds = [999,0]
 for x in all_files_dict:
     for e in x.get('conditions'):
         all_keywords.add(e)
+    filename_length = len(x.get('path'))
+    if filename_length < filename_length_bounds[0]:
+        filename_length_bounds[0] = filename_length
+    if filename_length > filename_length_bounds[1]:
+        filename_length_bounds[1] = filename_length
 all_keywords_string = ', '.join(list(all_keywords))
 
 
@@ -107,6 +113,8 @@ class colors:
     MAGENTA = '\033[95m'
     CYAN = '\033[96m'
     END = '\033[0m'
+    BOLD = '\x1b[1m'
+    UNBOLD = '\x1b[0m'
 
 banner_colorless = '''
            ,ggg,
@@ -130,11 +138,11 @@ Yb,_,dP       `8b,,d8b,_ ,d8b,_  _,88,_ `YbadP'    by
 banner = '''\033[94m
            ,ggg,
           dP""8I   ,dPYb, ,dPYb,                  \033[92m ,,,,,,,,,,,,  \033[0m \033[94m
-         dP   88   IP'`Yb IP'`Yb                  \033[92m: AUTOMATIC  : \033[0m \033[94m
-        dP    88   I8  8I I8  8I   gg             \033[92m: LOCAL      : \033[0m \033[94m
-       ,8'    88   I8  8' I8  8'   ""             \033[92m: FILE       : \033[0m \033[94m
-       d88888888   I8 dP  I8 dP    gg    ,ggg,    \033[92m: INCLUSION  : \033[0m \033[94m
- __   ,8"     88   I8dP   I8dP     88   i8" "8i   \033[92m: ENUMERATOR : \033[0m \033[94m
+         dP   88   IP'`Yb IP'`Yb                  \033[92m: \x1b[1mA\x1b[0m\033[92mUTOMATIC  : \033[0m \033[94m
+        dP    88   I8  8I I8  8I   gg             \033[92m: \x1b[1mL\x1b[0m\033[92mOCAL      : \033[0m \033[94m
+       ,8'    88   I8  8' I8  8'   ""             \033[92m: \x1b[1mF\x1b[0m\033[92mILE       : \033[0m \033[94m
+       d88888888   I8 dP  I8 dP    gg    ,ggg,    \033[92m: \x1b[1mI\x1b[0m\033[92mNCLUSION  : \033[0m \033[94m
+ __   ,8"     88   I8dP   I8dP     88   i8" "8i   \033[92m: \x1b[1mE\x1b[0m\033[92mNUMERATOR : \033[0m \033[94m
 dP"  ,8P      Y8   I8P    I8P      88   I8, ,8I   \033[92m ```````````` \033[0m \033[94m
 Yb,_,dP       `8b,,d8b,_ ,d8b,_  _,88,_ `YbadP'   \033[92m by \033[0m \033[94m
  "Y8P"         `Y88P'"Y88PI8"88888P""Y8888P"Y888  \033[92m 4wayhandshake \033[0m \033[94m
@@ -655,6 +663,8 @@ def probe_for_filters(repetitions):
         sigma = math.sqrt(sum((x-mu)**2 for x in d.values()) / N)
         return {
             'count': N,
+            'min': min(d.values()),
+            'max': max(d.values()),
             'sum': Sigma,
             'mean': mu,
             'stddev': sigma
@@ -694,7 +704,7 @@ def probe_for_filters(repetitions):
                 for _mutation in mutations:
                     for _bypass in bypasses:
                         for _ in range(repetitions):
-                            filepath = random_filename(random.randint(10,20)) + random_ele(extensions)
+                            filepath = random_filename(random.randint(filename_length_bounds[0], filename_length_bounds[1])) + random_ele(extensions)
                             base_resource = f'{slash}{traversal}{filepath}{ending}'
                             modified_resource = _bypass(_mutation(base_resource))
                             url = args.url + modified_resource
@@ -760,9 +770,17 @@ def probe_for_filters(repetitions):
                                                scale=0)]
     return {
         'num_requests': total_jobs,
-        'fc': probable_fc,
-        'fs': probable_fs,
-        'fw': probable_fw
+        'fc': {
+            'candidates': probable_fc
+        },
+        'fs': {
+            'candidates': probable_fs,
+            'range': [byte_count_stats.get('min'), byte_count_stats.get('max')]
+        },
+        'fw': {
+            'candidates': probable_fw,
+            'range': [word_count_stats.get('min'), word_count_stats.get('max')]
+        }
     }
 
 
@@ -861,28 +879,68 @@ def concurrent_async_requests(job_queue, exit_early, ignore_filters):
 
 
 def filter_probe_report(suggested_fc, suggested_fs, suggested_fw):
-    if len(suggested_fc) > 0 or len(suggested_fs) > 0 or len(suggested_fw) > 0:
+
+    fc = suggested_fc['candidates']
+    fs = suggested_fs['candidates']
+    fw = suggested_fw['candidates']
+
+    fc_suggestion_text, fs_suggestion_text, fw_suggestion_text, = '', '', ''
+
+    # Suggest a HTTP status code filter
+    # Don't ever suggest to filter out HTTP 200
+    codes = sorted([str(x[0]) for x in fc])
+    if '200' in codes:
+        codes.remove('200')
+    s = ','.join(codes)
+    if len(codes) > 0:
+        fc_suggestion_text = f"-fc '{s}'"
+
+    # Do a quick check to see if the filename was getting reflected (should have the same range as the filename lengths)
+    fs_vals = [x[0] for x in fs]
+    # if the range of byte counts is within 5 of the filename length bounds, then suggest a range
+    filename_length_range = filename_length_bounds[1] - filename_length_bounds[0]
+    fs_val_range = suggested_fs['range'][1] - suggested_fs['range'][0]
+    if fs_val_range < filename_length_range + 9:
+        fs_suggestion_text_min = int((max(fs_vals) + min(fs_vals))//2 - (filename_length_range//2 + 3))
+        fs_suggestion_text_max = int((max(fs_vals) + min(fs_vals))//2 + (filename_length_range//2 + 6))
+        fs_suggestion_text = f"-fs '{fs_suggestion_text_min}-{fs_suggestion_text_max}'"
+
+    # Suggest a word count filter
+    if len(fw) < 5:
+        s = ','.join(sorted([str(x[0]) for x in fw]))
+        fw_suggestion_text = f"-fw '{s}'"
+
+    if len(fc) > 0 or len(fc) > 0 or len(fc) > 0:
         if args.colorless:
             print(f"{' ' * 64}\n[+] Initial tests showed that these filters might be useful: ")
         else:
             print(f"{' ' * 64}\n{colors.GREEN}[+] Initial tests showed that these filters might be useful: {colors.END}")
-        if len(suggested_fc) > 0:
-            print("    HTTP status code:")
-            for f in suggested_fc:
+        if len(fc) > 0:
+            print("    HTTP status code (-fc, --filter-codes):")
+            for f in fc:
                 print(f'        {f[0]:<4} ({(f[1]*100):.1f}%)')
-        if len(suggested_fs) > 0:
-            print("    Response size, in bytes:")
-            for f in suggested_fs:
+        if len(fs) > 0:
+            print("    Response size, in bytes (-fs, --filter-size):")
+            for f in fs:
                 print(f'        {f[0]:<6} ({(f[1]*100):.1f}%)')
-        if len(suggested_fw) > 0:
-            print("    Response word count:")
-            for f in suggested_fw:
+        if len(fw) > 0:
+            print("    Response word count (-fw, --filter-words):")
+            for f in fw:
                 print(f'        {f[0]:<6} ({(f[1]*100):.1f}%)')
+        suggestion_text = ' '.join([fc_suggestion_text, fs_suggestion_text, fw_suggestion_text])
+        if suggestion_text and suggestion_text != '':
+            if args.colorless:
+                print(f"{' ' * 64}\nTry using the following filters when you run "
+                      f"\"scan\" and \"enum\" modes: \n    {suggestion_text}")
+            else:
+                print(f"{' ' * 64}\nTry using the following filters when you run "
+                      f"\"scan\" and \"enum\" modes: \n    {colors.GREEN}{suggestion_text}{colors.END}")
     else:
         if args.colorless:
             print(f"{' ' * 64}\n[-] Failed to determine any useful filters for the scan")
         else:
             print(f"{' ' * 64}\n{colors.RED}[-] Failed to determine any useful filters for the scan{colors.END}")
+    print('   ')
 
 
 def scan_report():
