@@ -1,9 +1,0 @@
-[
-  {
-    "path": "/etc/passwd",
-    "regex": "/etc/passwd",
-    "comment": "File should always be present. Tells us what users are on the target machine.",
-    "contains": "root:x:0",
-    "conditions": ["linux"]
-  }
-]
