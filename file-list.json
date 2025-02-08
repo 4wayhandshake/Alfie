@@ -1,0 +1,307 @@
+[
+  {
+    "path": "/etc/passwd",
+    "regex": "/etc/passwd",
+    "comment": "File should always be present. Tells us what users are on the target machine.",
+    "contains": "root:x:0",
+    "conditions": ["linux"],
+    "absolute": 1,
+    "applicable_modes": ["scan", "enum"]
+  },
+  {
+    "path": "/proc/self/environ",
+    "comment": "Show environment variables of the current process",
+    "contains": "",
+    "conditions": ["linux"],
+    "absolute": 1,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "/proc/cpuinfo",
+    "comment": "Show information about the system's CPU",
+    "contains": "",
+    "conditions": ["linux"],
+    "absolute": 1,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "/etc/php.ini",
+    "comment": "Possibly the PHP config file. Tells us the state of PHP config variables, and informs us what LFI methods might work",
+    "contains": "allow_url_fopen",
+    "conditions": ["linux", "php"],
+    "absolute": 1,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "/etc/php/[VERSION]/cli/php.ini",
+    "regex": "/etc/php/[0-9]\\.[0-9]/cli/php\\.ini",
+    "variables": ["[VERSION]"],
+    "comment": "PHP config file for CLI application. Tells us the state of PHP config variables, and informs us what LFI methods might work",
+    "contains": "allow_url_fopen",
+    "conditions": ["linux", "php"],
+    "absolute": 1,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "/etc/php/[VERSION]/apache2/php.ini",
+    "regex": "/etc/php/[0-9]\\.[0-9]/apache2/php\\.ini",
+    "variables": ["[VERSION]"],
+    "comment": "PHP config file for Apache2. Tells us the state of PHP config variables, and informs us what LFI methods might work",
+    "contains": "allow_url_fopen",
+    "conditions": ["linux", "php", "apache"],
+    "absolute": 1,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "/etc/php/[VERSION]/fpm/php.ini",
+    "regex": "/etc/php/[0-9]\\.[0-9]/fpm/php\\.ini",
+    "variables": ["[VERSION]"],
+    "comment": "PHP config file for PHP-FPM on Debian-based systems. Tells us the state of PHP config variables, and informs us what LFI methods might work",
+    "contains": "allow_url_fopen",
+    "conditions": ["linux", "php"],
+    "absolute": 1,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "/etc/php-fpm.d/php.ini",
+    "comment": "PHP config file for PHP-FPM on CentOS/RHEL/Fedora. Tells us the state of PHP config variables, and informs us what LFI methods might work",
+    "contains": "allow_url_fopen",
+    "conditions": ["linux", "php", "nginx"],
+    "absolute": 1,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "/proc/[PID]/status",
+    "regex": "/proc/[0-9]{1,3}/status",
+    "variables": ["[PID]"],
+    "comment": "Process status file. Gives stats that TaskManager or ps might give",
+    "contains": "Pid:",
+    "conditions": ["linux"],
+    "absolute": 1,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "C:\\Windows\\win.ini",
+    "comment": "Windows legacy initialization file",
+    "contains": "[windows]",
+    "conditions": ["windows"],
+    "absolute": 1,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "C:\\Windows\\system.ini",
+    "comment": "Windows legacy initialization file",
+    "contains": "[boot]",
+    "conditions": ["windows"],
+    "absolute": 1,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "config.sys",
+    "comment": "Windows config file for really old versions (95 and earlier)",
+    "contains": "DEVICE=",
+    "conditions": ["windows"],
+    "absolute": 0,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "C:\\boot.ini",
+    "comment": "Windows config file for really old versions (95 and earlier)",
+    "contains": "DEVICE=",
+    "conditions": ["windows"],
+    "absolute": 1,
+    "applicable_modes": ["scan", "enum"]
+  },
+  {
+    "path": "boot.ini",
+    "comment": "Windows config file for really old versions (95 and earlier)",
+    "contains": "DEVICE=",
+    "conditions": ["windows"],
+    "absolute": 0,
+    "applicable_modes": ["scan", "enum"]
+  },
+  {
+    "path": "autoexec.bat",
+    "comment": "Windows config file for really old versions (95 and earlier)",
+    "contains": "PATH C:\\WINDOWS",
+    "conditions": ["windows"],
+    "absolute": 0,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "C:\\xampp\\php\\php.ini",
+    "comment": "PHP config file for XAMPP servers. Tells us the state of PHP config variables, and informs us what LFI methods might work",
+    "contains": "allow_url_fopen",
+    "conditions": ["windows", "php", "xampp"],
+    "absolute": 1,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "C:\\php\\php.ini",
+    "comment": "PHP config file for standalone installation. Tells us the state of PHP config variables, and informs us what LFI methods might work",
+    "contains": "allow_url_fopen",
+    "conditions": ["windows", "php"],
+    "absolute": 1,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "app.py",
+    "comment": "Usually contains the main function for a Python-based server, ex. Flask.",
+    "contains": "import",
+    "conditions": ["python"],
+    "absolute": 0,
+    "applicable_modes": ["scan", "enum"]
+  },
+  {
+    "path": "index.py",
+    "comment": "Possibly contains the definition of the main page for a Python-based server, ex. Flask.",
+    "contains": "import",
+    "conditions": ["python"],
+    "absolute": 0,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": ".env",
+    "comment": "Hidden file that contains runtime configuration variables for an application. Can be used in many languages.",
+    "contains": "",
+    "conditions": [],
+    "absolute": 0,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "app.js",
+    "comment": "Usually contains the main function for a NodeJS-based server. Default when using Express",
+    "contains": "",
+    "conditions": ["js", "node"],
+    "absolute": 0,
+    "applicable_modes": ["scan", "enum"]
+  },
+  {
+    "path": "index.js",
+    "comment": "Possibly contains the definition of the main page for a NodeJS-based server. Common when using Express",
+    "contains": "",
+    "conditions": ["js"],
+    "absolute": 0,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "package.json",
+    "comment": "Package file for an NPM project. Default in NodeJS",
+    "contains": "\"name\": ",
+    "conditions": ["js", "node"],
+    "absolute": 0,
+    "applicable_modes": ["scan", "enum"]
+  },
+  {
+    "path": ".htaccess",
+    "comment": "Controls aspects of how a certain server or directory can be connected to.",
+    "contains": "Directory",
+    "conditions": ["apache"],
+    "absolute": 0,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": ".htpasswd",
+    "comment": "Configuration file for basic http authentication, via the WWW-Authenticate header. Should contain usernames and their MD5-hashed passwords",
+    "contains": "",
+    "conditions": ["apache"],
+    "absolute": 0,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "index.php",
+    "comment": "Main page for a PHP-based website",
+    "contains": "",
+    "conditions": ["php"],
+    "absolute": 0,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "database.php",
+    "comment": "database configuration script, hopefully!",
+    "contains": "",
+    "conditions": ["php"],
+    "absolute": 0,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "db.php",
+    "comment": "database configuration script, hopefully!",
+    "contains": "",
+    "conditions": ["php"],
+    "absolute": 0,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "config.php",
+    "comment": "Maybe a script with configuration variables?",
+    "contains": "",
+    "conditions": ["php"],
+    "absolute": 0,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "configuration.php",
+    "comment": "Maybe a script with configuration variables?",
+    "contains": "",
+    "conditions": ["php"],
+    "absolute": 0,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "cfg.php",
+    "comment": "Maybe a script with configuration variables?",
+    "contains": "",
+    "conditions": ["php"],
+    "absolute": 0,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "setup.php",
+    "comment": "Maybe a script with configuration variables?",
+    "contains": "",
+    "conditions": ["php"],
+    "absolute": 0,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "init.php",
+    "comment": "Maybe a script with configuration variables?",
+    "contains": "",
+    "conditions": ["php"],
+    "absolute": 0,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "application.rb",
+    "comment": "Main config script with Rails",
+    "contains": "",
+    "conditions": ["ruby", "rails"],
+    "absolute": 0,
+    "applicable_modes": ["scan", "enum"]
+  },
+  {
+    "path": "routes.rb",
+    "comment": "Describes routes in a rails application",
+    "contains": "",
+    "conditions": ["ruby", "rails"],
+    "absolute": 0,
+    "applicable_modes": ["scan", "enum"]
+  },
+  {
+    "path": "database.yml",
+    "comment": "Database configuration variables and secrets",
+    "contains": "",
+    "conditions": ["ruby", "rails"],
+    "absolute": 0,
+    "applicable_modes": ["enum"]
+  },
+  {
+    "path": "boot.rb",
+    "comment": "Shows load path and list of dependencies",
+    "contains": "",
+    "conditions": ["ruby"],
+    "absolute": 0,
+    "applicable_modes": ["enum"]
+  }
+]
