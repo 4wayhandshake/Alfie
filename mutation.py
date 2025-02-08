@@ -9,6 +9,10 @@ def urlencode_specialchars(s):
     """
     return urlencode(s)
 
+def urlencode_special_and_slashes(s):
+    encoded = urlencode_specialchars(s)
+    fully_encoded = encoded.replace('/','%2f')
+    return fully_encoded
 
 def urlencode_morechars(s):
     """
@@ -19,7 +23,8 @@ def urlencode_morechars(s):
                      .replace('.', '%2e')
                      .replace('-', '%2d')
                      .replace('_', '%5f')
-                     .replace('~', '%7e'))
+                     .replace('~', '%7e')
+                     .replace('/', '%2f'))
     return fully_encoded
 
 
@@ -39,4 +44,7 @@ def double_urlencode_morechars(s):
 
 def slash_bypass(s):
     return s.replace('/', '/./')
-
+    
+    
+def backslashes(s):
+    return s.replace('/','\\')

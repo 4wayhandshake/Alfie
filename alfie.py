@@ -251,6 +251,7 @@ endings = ['', '%00']
 mutations = [
     mutation.identity,
     mutation.urlencode_specialchars,
+    mutation.urlencode_special_and_slashes,
     mutation.urlencode_morechars,
     mutation.double_urlencode_specialchars,
     mutation.double_urlencode_morechars
@@ -258,7 +259,8 @@ mutations = [
 
 bypasses = [
     mutation.identity,
-    mutation.slash_bypass
+    mutation.slash_bypass,
+    mutation.backslashes
 ]
 
 s = requests.session()
@@ -537,6 +539,8 @@ def process_urls(job_queue, exit_on_success=False, ignore_filters=False, show_re
                 spinner(job['idx'], f'Processing... ({job['idx']}/{total_jobs_approx})')
                 url = job.get('url')
                 method = args.request_type.upper()
+                if args.verbose:
+                    print(f'Making request: {method} {url}')
                 resp = make_request(method, url, request_cookie, request_headers, request_data)
                 if (resp is not None) and (ignore_filters or matches(resp, url)):
                     if 'expect_base64' in job:
@@ -630,7 +634,7 @@ def print_options(mode):
             print(f'Only scanning relative paths: {str(args.relative_only):>34}')
     elif args.mode == "enum":
         print(f'Example LFI: {args.example_lfi:>51}')
-        print(f'No extra tests: {str(args.no_extra_tests):>47}')
+        print(f'No extra tests: {str(args.no_extra_tests):>48}')
 
     if args.min != parser.get_default('min'):
         print(f'Minimum traversal steps: {args.min:>39}')
