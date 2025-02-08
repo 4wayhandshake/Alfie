@@ -18,12 +18,18 @@ import base64
 import urllib3
 urllib3.disable_warnings()
 
-version_number = '2.0.0'
+version_number = '2.1.0'
 
 #
 # NOTE TO SELF
 # CHECK OUT 0XDF'S WALKTHROUGH ON YOUTUBE FOR PIKATWOO FOR TURNING LFI INTO RCE ON NGINX TARGETS!!!
 #
+
+def spinner(idx, message, prescale=0, carriage_rtn='\r'):
+    # slow down the spinner by a factor of 2^x, where x is prescale
+    state = chr(0x25E2 + ((idx >> prescale) % 4))
+    print(f'  {state} {message}{carriage_rtn}', end='', flush=True)
+    
 
 def load_json_file(file_path):
     """
@@ -101,6 +107,7 @@ request_args.add_argument('-t', '--threads', dest='threads', help='Number of thr
 request_args.add_argument('--timeout', dest='timeout', help='Timeout for each request (in seconds).', type=int, default=5)
 request_args.add_argument('-X', '--request-type', dest='request_type', help='Type of HTTP request to use. Ex "POST".', type=str, default='GET')
 request_args.add_argument('-b', '--cookies', dest='cookies', help='Cookies to include in each request. Ex "key1=value1; key2=value2" (Tip: use document.cookie in browser console)', type=str)
+request_args.add_argument('-H', '--headers', dest='headers', help='Extra headers to include in each request. Use semicolons as a separator. Ex "Host: 4wayhandshake.test.tld; Authorization: Bearer 23456.hgfds.234567890"', type=str)
 request_args.add_argument('-d', '--data', dest='data', help='Data to include in each request. Only applies if using a POST request (see -X option). Ex "key1=value1; key2=value2".', type=str)
 
 response_args = parser.add_argument_group('Response', 'Affect how responses are received and processed')
@@ -114,9 +121,13 @@ scan_mode_parser = mode_subparsers.add_parser('scan', help='Find a valid path tr
 enum_mode_parser = mode_subparsers.add_parser('enum', help='Use a known path traversal, and try to enumerate files on the target system. If possible, attempts will be made to gain RCE')
 batch_mode_parser = mode_subparsers.add_parser('batch', help='Automatically run \"filter\" mode, then \"scan\" mode, then \"enum\" mode')
 
+scan_mode_parser.add_argument_group('scan', 'Arguments for "scan" mode')
+scan_mode_parser.add_argument('-rel', '--relative-only', dest='relative_only', action='store_true', help='Only use relative paths in scan mode. Great for finding files like package.json (Defaults to false when not specified)')
+
 enum_mode_parser.add_argument_group('enum', 'Arguments for "enum" mode')
 enum_mode_parser.add_argument('-ex', '--example-lfi', dest='example_lfi', help='Example of a traversal that successfully discloses a local file (the bold part of the output of "scan" mode) Ex. "/../../../etc/passwd"', type=str, required=True)
 enum_mode_parser.add_argument('-nx', '--no-extra-tests', dest='no_extra_tests', action='store_true', help='Don\'t run the extra LFI tests (only useful for WAF evasion).')
+
 
 args = parser.parse_args()
 
@@ -258,6 +269,7 @@ filter_codes = []
 filter_sizes = []
 filter_words = []
 request_cookie = None
+request_headers = None
 request_data = None
 files_to_test = []
 max_request_index = -1
@@ -289,6 +301,17 @@ def parse_cookie(s):
     # return a requests cookiejar from a dictionary
     return requests.utils.cookiejar_from_dict(cookie_dict)
 
+def parse_headers(s):
+    _header_strings = [h.lstrip() for h in s.split(';')]
+    header_dict = {}
+    for h in _header_strings:
+        _h_parts = h.split(':')
+        if len(_h_parts) != 2:
+            raise ValueError
+        _h_key = _h_parts[0].rstrip()
+        _h_val = _h_parts[1].lstrip().rstrip()
+        header_dict[_h_key] = _h_val
+    return header_dict
 
 def parse_data(s):
     return string_to_dict(s)
@@ -377,6 +400,19 @@ def validate_args():
             else:
                 print(f'{colors.MAGENTA}An error occurred while parsing cookies:{colors.END}\n{e}\n')
             sys.exit(1)
+    
+    if args.headers:
+        global request_headers
+        custom_headers = {}
+        try:
+            custom_headers = parse_headers(args.headers)
+        except ValueError as e:
+            if args.colorless:
+                print(f'Warning: invalid headers provided.\nPlease list all custom headers using a semicolon as a separator: Ex "Host: something; Authorization: bearer blahblahblah".\nProceeding without custom headers...\n')
+            else:
+                print(f'{colors.MAGENTA}Warning: invalid headers provided.{colors.END}\nPlease list all custom headers using a semicolon as a separator: Ex "Host: something; Authorization: bearer blahblahblah".\nProceeding without cookies.\n')
+        default_headers = requests.utils.default_headers()
+        request_headers = {**default_headers, **custom_headers}
 
     if args.data:
         global request_data
@@ -418,8 +454,7 @@ def loadWordlist(filename):
 def load_files_list(targets_string):
     global files_to_test
     for f in all_files_dict:
-        if any([(target.lower() == 'any' or target.lower() in f.get('conditions'))
-                for target in targets_string.split(',')]):
+        if any([(target.lower() == 'any' or target.lower() in f.get('conditions')) for target in targets_string.split(',')]):
             files_to_test.append(f)
     for ftt in files_to_test:
         ftt["found"] = False
@@ -455,12 +490,12 @@ def matches(resp, url):
     return ret
 
 
-def make_request(method, url, req_cookie, req_json, req_data=None):
+def make_request(method, url, req_cookie, req_headers, req_json, req_data=None):
     try:
         if method == 'POST':
-            response = requests.post(url, cookies=req_cookie, json=req_json, data=req_data, timeout=args.timeout)
+            response = requests.post(url, cookies=req_cookie, headers=req_headers, json=req_json, data=req_data, timeout=args.timeout)
         else:
-            response = requests.get(url, cookies=req_cookie, timeout=args.timeout)
+            response = requests.get(url, cookies=req_cookie, headers=req_headers, data=req_data, timeout=args.timeout)
         # if args.verbose:
         #     code = int(response.status_code)
         #     num_bytes = len(response.content)
@@ -494,13 +529,15 @@ def find_longest_base64_segment(sample):
 
 def process_urls(job_queue, exit_on_success=False, ignore_filters=False, show_results=False):
     global exit_flag, max_request_index
+    total_jobs_approx = f'{20 * round(job_queue.qsize() / 20)}ish'
     while not exit_flag:
         try:
             job = job_queue.get(timeout=1)
             if job is not None:
+                spinner(job['idx'], f'Processing... ({job['idx']}/{total_jobs_approx})')
                 url = job.get('url')
                 method = args.request_type.upper()
-                resp = make_request(method, url, request_cookie, request_data)
+                resp = make_request(method, url, request_cookie, request_headers, request_data)
                 if (resp is not None) and (ignore_filters or matches(resp, url)):
                     if 'expect_base64' in job:
                         b64 = find_longest_base64_segment(resp.text)
@@ -589,7 +626,8 @@ def print_options(mode):
     if args.mode == "filter":
         pass
     elif args.mode == "scan":
-        pass
+        if args.relative_only:
+            print(f'Only scanning relative paths: {str(args.relative_only):>34}')
     elif args.mode == "enum":
         print(f'Example LFI: {args.example_lfi:>51}')
         print(f'No extra tests: {str(args.no_extra_tests):>47}')
@@ -612,6 +650,8 @@ def print_options(mode):
         print(f'Request type: {args.request_type.upper():>50}')
     if args.cookies:
         print(f'Cookies: {args.cookies:>55}')
+    if args.headers:
+        print(f'Headers: {args.headers:>55}')
     if args.data:
         print(f'Data: {args.data:>58}')
     if args.output:
@@ -654,6 +694,7 @@ def runExtraTests(tests):
         #ending = args.ending if args.ending else ''
         uri_base = f'{args.url}{test.get("url","")}'
         c = request_cookie
+        h = request_headers
         d = test.get('data', None)
         terminations = [''] if args.no_ending_checks else endings
         # Print a message stating which test is happening
@@ -669,7 +710,7 @@ def runExtraTests(tests):
         method = test['method']
         for termination in terminations:
             uri = f'{uri_base}{termination}'
-            resp = make_request(method, uri, req_cookie=c, req_json=None, req_data=d)
+            resp = make_request(method, uri, req_cookie=c, req_headers=h, req_json=None, req_data=d)
             if testSuccess(test['success_criteria'], resp):
                 if args.verbose:
                     if args.colorless:
@@ -783,6 +824,7 @@ def probe_for_filters(repetitions):
                             }
                             job_queue.put(job)
                             idx += 1
+                            
     # Reset the successes dict
     global successes
     successes = {}
@@ -829,6 +871,11 @@ def probe_for_filters(repetitions):
                                                word_count_stats['mean'],
                                                word_count_stats['stddev'],
                                                scale=0)]
+
+    # If we didn't find any outliers, just suggest a byte size filter
+    if len(probable_fc) == 0 and len(probable_fs) == 0 and len(probable_fw) == 0:
+        probable_fs = [(round(byte_count_stats['mean']), 1.0)]
+    
     return {
         'num_requests': total_jobs,
         'fc': {
@@ -853,7 +900,14 @@ def scan():
     Once "scan" mode finds this successful combination, we can greatly expedite "enum" mode.
     :return: True if a traversal was found, otherwise False.
     """
-    files_useful_for_scan = ['/etc/passwd', 'C:\\boot.ini', 'boot.ini']
+    # Do relative path files for 'scan' mode, then absolute path
+    files_useful_for_scan = []
+    files_useful_for_scan += [file_obj.get('path') for file_obj in all_files_dict if ("scan" in file_obj.get('applicable_modes',[]) and file_obj.get('absolute') == 0)]
+    if not args.relative_only:
+        files_useful_for_scan += [file_obj.get('path') for file_obj in all_files_dict if ("scan" in file_obj.get('applicable_modes',[]) and file_obj.get('absolute') == 1)]
+    
+    
+    
     scan_target_files = [f for f in files_to_test if (f.get('path') in files_useful_for_scan)]
     # Create a queue of requests to make
     job_queue = queue.Queue()
@@ -1153,7 +1207,7 @@ def filter_probe_report(suggested_fc, suggested_fs, suggested_fw):
         s = ','.join(sorted([str(x[0]) for x in fw]))
         fw_suggestion_text = f"-fw '{s}'"
 
-    if len(fc) > 0 or len(fc) > 0 or len(fc) > 0:
+    if len(fc) > 0 or len(fs) > 0 or len(fw) > 0:
         if args.colorless:
             print(f"{' ' * 64}\n[+] Initial tests showed that these filters might be useful: ")
         else:
@@ -1252,7 +1306,7 @@ def main():
         enum_report()
 
     if args.mode == "batch":
-        print('TODO: I haven\'t written \"batch\" mode yet!')
+        print('TODO: I haven\'t written \"batch\" mode yet! Please run it in filter mode, then scan mode, then enum mode.')
         sys.exit(0)
 
 
