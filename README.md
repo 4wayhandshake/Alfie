@@ -191,10 +191,10 @@ Affect how responses are received and processed.
   - [x] Added an accompanying `file-list.json` that controls which files are used for scanning vs enumeration
   - [x] Added the ability to include regex-powered variables within the filepaths listed in `file-list.json`
 - 2.1.0:
-  - [ ] Added progress spinner
-  - [ ] Included the ability to specify custom request headers (not just cookies)
-  - [ ] You can now `scan` for only the relative-filepath targets (good for finding stuff like `package.json` instead of `/etc/passwd`)
-  - [ ] Amended this README to show new options/args
+  - [x] Added progress spinner
+  - [x] Included the ability to specify custom request headers (not just cookies)
+  - [x] You can now `scan` for only the relative-filepath targets (good for finding stuff like `package.json` instead of `/etc/passwd`)
+  - [x] Amended this README to show new options/args
 
 
 
