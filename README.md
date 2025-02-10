@@ -195,7 +195,9 @@ Affect how responses are received and processed.
   - [x] Included the ability to specify custom request headers (not just cookies)
   - [x] You can now `scan` for only the relative-filepath targets (good for finding stuff like `package.json` instead of `/etc/passwd`)
   - [x] Amended this README to show new options/args
-
+- 2.2.0:
+  - [x] Enum mode now dumps files into ./output directory
+  - [x] After enum mode is finished, user may manually check for files using a console-style prompt
 
 
 
@@ -205,10 +207,10 @@ Affect how responses are received and processed.
 - [ ] Separate out the PHP-only tests. 
   - https://www.php.net/manual/en/wrappers.php.php
   - https://www.php.net/manual/en/filters.php
-- [ ] Encoding mutations should apply to the whole payload, not just the traversal
+- [x] Encoding mutations should apply to the whole payload, not just the traversal
 - [ ] Add `batch` mode: where `filter` leads into `scan` which leads into `enum`.
-- [ ] Add interactive `enum` mode, that allows you to just drop into a prompt where you can request specific files if you'd rather.
-- [ ] Allow dumping all file contents acquired in `enum` mode into some kind of output directory. 
+- [x] Add interactive `enum` mode, that allows you to just drop into a prompt where you can request specific files if you'd rather.
+- [x] Allow dumping all file contents acquired in `enum` mode into some kind of output directory. 
 - [ ] Make the whole view a little wider (nobody's using this on their phone :sweat_smile:)
 
 **Please :star: this repo if you found it useful!**
